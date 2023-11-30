@@ -15,7 +15,6 @@ knitr::opts_chunk$set(echo = TRUE)
 ```{r}
 library(ggplot2)
 library(survival)
-library(survminer)
 ```
 
 
@@ -149,11 +148,11 @@ pred_data <- data.frame(surv = pred)
 
 average_margin_MM <- 1300 
 discount_rate_r <- 0.1
-retention_rate <- 1
+retention_rate <- 
 tenure <- data$tenure
 
 # Calculate CLV
-data$CLV <- (average_margin * (1 - discount_rate_r) * retention_rate) / (1 + discount_rate_r - retention_rate) * tenure
+data$CLV <- (average_margin_MM * (1 - discount_rate_r) * retention_rate) / (1 + discount_rate_r - retention_rate) * tenure
 
 ```
 
