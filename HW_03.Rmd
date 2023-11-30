@@ -1,0 +1,242 @@
+---
+title: "HW_03"
+author: "Anahit Navoyan"
+date: "`r Sys.Date()`"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library(ggplot2)
+library(survival)
+library(survminer)
+```
+
+
+```{r}
+data = read.csv('telco.csv')
+head(data)
+```
+
+
+```{r}
+data$churn=ifelse(data$churn=='Yes',1,0)
+y = data['churn']
+valid_columns = colnames(data)[c(-1,-3,-15)]
+x = data[valid_columns]
+```
+
+
+```{r}
+# Print names of all available distributions
+all_distributions <- survreg.distributions
+distributions <- names(all_distributions)
+print(distributions)
+```
+
+
+```{r}
+surv_obj = Surv(time = data$tenure, event = data$churn)
+
+
+distribution_names = c()
+loglikelihoods = c()
+aics = c()
+bics = c()
+regression_models = c()
+
+for (distribution in all_distributions) {
+  reg_m = survreg(surv_obj~., dist = distribution, data = x)
+
+  # Model fit information
+  print('.....................')
+  print(distribution$name)
+  print(reg_m$loglik)
+  print(extractAIC(reg_m)[2])
+  print(BIC(reg_m))
+
+  regression_models = c(regression_models, reg_m)
+  distribution_names = c(distribution_names, distribution$name)
+  aics = c(aics,extractAIC(reg_m)[2])
+  bics = c(bics,BIC(reg_m))
+  loglikelihoods = c(loglikelihoods,reg_m$loglik[2])
+}
+
+```
+
+
+```{r}
+print(distribution_names[which.max(loglikelihoods)])
+```
+
+```{r}
+print(distribution_names[which.min(aics)])
+```
+
+
+```{r}
+print(distribution_names[which.min(bics)])
+```
+
+Taking the model with highest loglikelihood and lowest AIC and BIC score. The
+results show that the Log Normal model is a best fit
+
+
+
+## Visualize all the curves: one plot for all
+
+```{r}
+pct <- 1:90/100
+all_predictions = matrix(ncol = length(pct))
+
+for (distribution in distributions){
+  reg_m = survreg(surv_obj~., dist = distribution, data = x)
+  ptime <- predict(reg_m, type='quantile', p = pct)
+  all_predictions = rbind(all_predictions, x = ptime[1, ])
+}
+
+all_predictions = all_predictions[2:11,1:90]
+pal = palette(rainbow(n = 10))
+p <- ggplot()
+
+for (i in c(1:length(distributions))){
+  p <- p + geom_line(aes_string(x = all_predictions[i,1:90], y = 1-pct), color = pal[i], group = distribution_names[i]) +
+    geom_text(aes(x = all_predictions[[i,c(90)]], y = (1-pct)[90], label = paste(distribution_names[[i]])), check_overlap = TRUE) + theme_bw()
+}
+
+print(p)
+```
+
+
+The model with the Log Normal distribution is the best model because it has the
+lowest AIC and BIC and it has the highest log-likelihood. Therefore, it has a 
+better fit on the original data.
+
+
+
+## Keep significant features
+
+```{r}
+best_model <- survreg(surv_obj ~ ., dist = "lognormal", data = x)
+
+significant_features <- rownames(summary(best_model)$table)[summary(best_model)$table[, 4] < 0.05]
+
+significant_features <- c("age", "address", "voice", "custcat", "marital", "internet")
+
+final_model <- survreg(surv_obj ~ ., dist = "lognormal", data = x[significant_features])
+
+summary(final_model)
+```
+
+
+## CLV
+
+```{r}
+pred <- predict(final_model, newdata = data, type = "response")
+# list.tree(pred)
+
+pred_data <- data.frame(surv = pred)
+```
+
+
+```{r}
+
+average_margin_MM <- 1300 
+discount_rate_r <- 0.1
+retention_rate <- 1
+tenure <- data$tenure
+
+# Calculate CLV
+data$CLV <- (average_margin * (1 - discount_rate_r) * retention_rate) / (1 + discount_rate_r - retention_rate) * tenure
+
+```
+
+
+
+```{r}
+#CLV Density By Gender
+
+ggplot(data, aes(x=CLV, color=gender))+
+labs(title = "CLV Density By Gender")+
+geom_density()
+```
+
+
+```{r}
+#CLV Density By Education
+
+ggplot(data,aes(x=CLV, color=ed))+
+labs(title = "CLV Density By Education")+
+geom_density()
+```
+
+```{r}
+#CLV Density By Region
+
+ggplot(data,aes(x=CLV, color=region))+
+labs(title = "CLV Density By Region")+
+geom_density()
+
+```
+
+## Retention
+
+```{r}
+
+sequence = seq(1,length(colnames(pred_data)),1)
+MM = 1300
+r = 0.1
+for (num in sequence) {
+pred_data[,num]=pred_data[,num]/(1+r/12)^(sequence[num]-1)
+}
+pred_data$CLV=MM*rowSums(pred_data)
+data$CLV = pred_data$CLV
+```
+
+
+```{r}
+#CLV Density By Gender
+
+ggplot(data, aes(x=CLV)) + labs(title = "CLV Density By Gender")+
+  geom_density()
+```
+
+
+# Report
+
+```{r}
+summary(final_model)
+```
+
+The distribution lognormal was chosen as it has the highest loglikelyhood and
+the lowest AIC and BIC score.
+Overall p-value of the model indicates that the model is statistically 
+significant and is a good fit.
+
+The positive coefficients for age, address, custcatE-service, custcatPlus 
+service, and custcatTotal service suggest that older individuals are less prone 
+to churn. Customers who have not chosen the basic service are also less likely 
+to churn. On the contrary, the negative coefficients for maritalUnmarried, 
+VoiceYes, and internetYes imply that customers with internet and voice services 
+show a lower survival rate. Furthermore, being unmarried increases the 
+likelihood of churn among customers.
+
+Important segments are the segments with higher CLV than the other groups. 
+For example from the visualizations we can conlude that males with some college 
+education and from zone 1 has the highest CLV.
+
+
+
+
+
+
+
+
+
+
